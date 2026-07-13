@@ -1,0 +1,9 @@
+<library path="gluon_hardware_interface">
+  <class name="gluon_hardware_interface/GluonSystemHardware"
+         type="gluon_hardware_interface::GluonSystemHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control SystemInterface for the INNFOS Gluon arm, backed by innfos-cpp-sdk.
+    </description>
+  </class>
+</library>
