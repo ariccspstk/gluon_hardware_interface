@@ -1,7 +1,9 @@
 #include "gluon_hardware_interface/gluon_hardware_interface.hpp"
 
 #include <cmath>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -16,10 +18,21 @@ namespace
 constexpr char kLogger[] = "GluonSystemHardware";
 constexpr double kTwoPi = 2.0 * M_PI;
 
+// Motor-shaft revolutions (what the INNFOS SDK's getPosition()/setPosition()
+// actually report) vs. output-shaft revolutions (what the URDF/joint angles
+// are defined in terms of). Confirmed from the legacy ROS 1 gluon_hw_interface
+// (STEERING_GEAR_RATIO = 36, RAD_TO_POS/POS_TO_RAD macros) - the current code
+// was previously missing this factor entirely, which is why raw SDK readings
+// looked like multiple full revolutions instead of plausible joint angles.
+// NOTE: applies the same ratio to all 6 joints, matching what the legacy code
+// did. If any individual joint actually uses a different gear ratio, this
+// needs to become a per-joint value instead of one shared constant.
+constexpr double kGearRatio = 36.0;
+
 // SDK units <-> ros2_control (SI) units.
-inline double revolutions_to_radians(double rev) { return rev * kTwoPi; }
-inline double radians_to_revolutions(double rad) { return rad / kTwoPi; }
-inline double rpm_to_rad_per_sec(double rpm) { return rpm * kTwoPi / 60.0; }
+inline double revolutions_to_radians(double rev) { return rev * kTwoPi / kGearRatio; }
+inline double radians_to_revolutions(double rad) { return rad * kGearRatio / kTwoPi; }
+inline double rpm_to_rad_per_sec(double rpm) { return rpm * kTwoPi / (60.0 * kGearRatio); }
 }  // namespace
 
 hardware_interface::CallbackReturn GluonSystemHardware::on_init(
@@ -116,8 +129,17 @@ hardware_interface::CallbackReturn GluonSystemHardware::on_activate(
   }
 
   // Let auto-refresh populate at least one round of cached values before we
-  // seed commands from them, so the first write() doesn't jerk the arm.
+  // read current position for the homing check below.
   ActuatorController::processEvents();
+
+  if (!innfos_home_all())
+  {
+    RCLCPP_FATAL(rclcpp::get_logger(kLogger), "Homing failed; refusing to activate.");
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  // Seed state and commands from the now-homed actuators, so the first
+  // write() in the control loop doesn't jerk the arm.
   for (size_t i = 0; i < info_.joints.size(); ++i)
   {
     double position = 0.0, velocity = 0.0, effort = 0.0;
@@ -130,7 +152,7 @@ hardware_interface::CallbackReturn GluonSystemHardware::on_activate(
     }
   }
 
-  RCLCPP_INFO(rclcpp::get_logger(kLogger), "Gluon hardware activated.");
+  RCLCPP_INFO(rclcpp::get_logger(kLogger), "Gluon hardware activated and homed.");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -205,6 +227,30 @@ bool GluonSystemHardware::innfos_lookup_and_enable()
   Actuator::ErrorsDefine ec = Actuator::ERR_NONE;
   const auto discovered = controller_->lookupActuators(ec);
 
+  //UnifiedID is a structure composed of the actuator ID (actuatorID) and IP(ipAddress) of ECB(ECU)
+  std::vector<ActuatorController::UnifiedID> uIDArray = discovered;
+
+  //If the size of the uIDArray is greater than zero, the connected actuators have been found
+  if(uIDArray.size() > 0)
+  {
+      for(auto uID : uIDArray)
+      {
+          cout << "Actuator ID: "<<(int)uID.actuatorID << " IP address: " << uID.ipAddress.c_str() << endl;
+      }
+  }
+  else
+  {
+      //ec=0x803 Communication with ECB(ECU) failed
+      //ec=0x802 Communication with actuator failed
+      cout << "Connected error code:" << hex << ec << endl;
+  }
+
+  // First pass: confirm every actuator_ids_ entry was discovered on
+  // ip_address_, and build the UnifiedID list to hand to
+  // enableActuatorInBatch() in one shot below.
+  std::vector<ActuatorController::UnifiedID> to_enable;
+  to_enable.reserve(actuator_ids_.size());
+
   for (auto id : actuator_ids_)
   {
     bool found = false;
@@ -213,6 +259,7 @@ bool GluonSystemHardware::innfos_lookup_and_enable()
       if (unified_id.actuatorID == id && unified_id.ipAddress == ip_address_)
       {
         found = true;
+        to_enable.push_back(unified_id);
         break;
       }
     }
@@ -225,20 +272,28 @@ bool GluonSystemHardware::innfos_lookup_and_enable()
         id, ip_address_.c_str(), static_cast<unsigned>(ec));
       return false;
     }
+  }
 
-    if (!controller_->enableActuator(id, ip_address_))
-    {
-      RCLCPP_ERROR(rclcpp::get_logger(kLogger), "enableActuator(%u) failed.", id);
-      return false;
-    }
+  // Batch-enable everything in a single SDK call instead of one
+  // enableActuator() round trip per joint.
+  if (!controller_->enableActuatorInBatch(to_enable))
+  {
+    RCLCPP_ERROR(rclcpp::get_logger(kLogger), "enableActuatorInBatch() failed.");
+    return false;
+  }
 
+  // Second pass: per-actuator mode activation and auto-refresh setup, which
+  // have no batch equivalents in the SDK.
+  for (const auto & unified_id : to_enable)
+  {
     // Profile position mode: confirmed as Mode_Profile_Pos in actuatordefine.h
     // (position control with an accel/decel ramp, as opposed to the plain
     // Mode_Pos). ActuatorMode is a plain enum in the Actuator namespace (not
     // an enum class), so it's Actuator::Mode_Profile_Pos, not
     // Actuator::ActuatorMode::Mode_Profile_Pos. activateActuatorMode()
     // returns void, so there's nothing to check here.
-    controller_->activateActuatorMode(id, Actuator::Mode_Profile_Pos, ip_address_);
+    controller_->activateActuatorMode(
+      unified_id.actuatorID, Actuator::Mode_Profile_Pos, unified_id.ipAddress);
 
     // Turn on the SDK's own background polling of current/velocity/position,
     // so read() can take cached values (bRefresh=false) instead of blocking.
@@ -246,21 +301,120 @@ bool GluonSystemHardware::innfos_lookup_and_enable()
     // too slow for a 100Hz control loop (see gluon_controllers.yaml's
     // update_rate) - bring it down to match, or read() will keep returning
     // the same stale value for ~100 cycles between actual updates.
-    controller_->switchAutoRefresh(id, true, ip_address_);
-    controller_->setAutoRefreshInterval(id, 10, ip_address_);  // ms, matches 100Hz
+    controller_->switchAutoRefresh(unified_id.actuatorID, true, unified_id.ipAddress);
+    controller_->setAutoRefreshInterval(unified_id.actuatorID, 10, unified_id.ipAddress);  // ms, matches 100Hz
   }
+
   return true;
 }
 
 bool GluonSystemHardware::innfos_disable_all()
 {
-  bool all_ok = true;
+  // Turn off auto-refresh per actuator first (no batch equivalent exposed),
+  // then flush the event queue before issuing the disable.
   for (auto id : actuator_ids_)
   {
     controller_->switchAutoRefresh(id, false, ip_address_);
-    if (!controller_->disableActuator(id, ip_address_))
+  }
+  ActuatorController::processEvents();
+
+  // A known-working standalone tool disables successfully by re-running
+  // lookupActuators() immediately beforehand, on a controller instance that
+  // was never streaming continuous auto-refresh/setPosition traffic. Doing
+  // the same re-lookup here, now that auto-refresh is off, to test whether
+  // stale/queued traffic from the long-running session was the reason
+  // disableAllActuators() alone wasn't taking effect in this process.
+  Actuator::ErrorsDefine ec = Actuator::ERR_NONE;
+  controller_->lookupActuators(ec);
+  ActuatorController::processEvents();
+
+  // NOTE: disableAllActuators() disables every actuator the controller has
+  // discovered, not just the ones in actuator_ids_. Fine as long as this
+  // ActuatorController instance is dedicated to this arm - if it's ever
+  // shared with actuators outside actuator_ids_, this will disable those
+  // too.
+  controller_->disableAllActuators();
+  ActuatorController::processEvents();
+
+  // Don't just trust the return value - verify every actuator we actually
+  // care about considers itself disabled. Retry a few times before giving
+  // up, since this matters for safety (a "disabled" arm that's still
+  // powered is a real hazard, not just a log nuisance).
+  constexpr int kMaxAttempts = 5;
+  int attempt = 1;
+  auto any_still_enabled = [this]()
+  {
+    for (auto id : actuator_ids_)
     {
-      RCLCPP_ERROR(rclcpp::get_logger(kLogger), "disableActuator(%u) failed.", id);
+      if (controller_->isEnable(id, ip_address_)) return true;
+    }
+    return false;
+  };
+
+  // Give the disable command real time to take effect before checking -
+  // the legacy ROS1 interface for this arm did the same (disableAllActuators()
+  // followed by a flat 200ms sleep), suggesting disabling isn't instantaneous.
+  // Re-calling disableAllActuators() again too quickly may just interrupt an
+  // already in-flight disable sequence rather than help it along, so each
+  // attempt gets a full settle window (with processEvents() pumped
+  // throughout, since our isEnable()/heartbeat state needs that to update)
+  // before we decide whether to retry.
+  constexpr auto kSettleWindow = std::chrono::milliseconds(250);
+  constexpr auto kPumpInterval = std::chrono::milliseconds(20);
+
+  auto settle_and_check = [kSettleWindow, kPumpInterval, &any_still_enabled]()
+  {
+    const auto deadline = std::chrono::steady_clock::now() + kSettleWindow;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+      std::this_thread::sleep_for(kPumpInterval);
+      ActuatorController::processEvents();
+    }
+    return any_still_enabled();
+  };
+
+  while (settle_and_check() && attempt < kMaxAttempts)
+  {
+    // Log *why*, not just that it failed - if disable keeps getting
+    // rejected, the actuator's own error code / current mode should tell us
+    // whether it's refusing because it's still actively holding a Profile
+    // Position setpoint, faulted, or something else entirely.
+    for (auto id : actuator_ids_)
+    {
+      if (controller_->isEnable(id, ip_address_))
+      {
+        const auto mode = controller_->getActuatorMode(id, ip_address_);
+        const auto err = controller_->getErrorCode(id, ip_address_);
+        RCLCPP_WARN(
+          rclcpp::get_logger(kLogger),
+          "  actuator %u still enabled: mode=%d, error=0x%x",
+          id, static_cast<int>(mode), static_cast<unsigned>(err));
+      }
+    }
+
+    RCLCPP_WARN(
+      rclcpp::get_logger(kLogger),
+      "disableAllActuators() attempt %d did not take effect for all actuators after a "
+      "%ld ms settle window; retrying.",
+      attempt, static_cast<long>(kSettleWindow.count()));
+    controller_->disableAllActuators();
+    ActuatorController::processEvents();
+    ++attempt;
+  }
+
+  bool all_ok = true;
+  for (auto id : actuator_ids_)
+  {
+    if (controller_->isEnable(id, ip_address_))
+    {
+      // Escalate hard: this means the arm may still be powered and holding
+      // position/torque after what the rest of the system believes is a
+      // clean deactivation. Whoever is operating the arm needs to know.
+      RCLCPP_FATAL(
+        rclcpp::get_logger(kLogger),
+        "Actuator %u COULD NOT BE DISABLED after %d attempts - it may still be "
+        "powered/enabled. Treat the arm as live until confirmed otherwise.",
+        id, kMaxAttempts);
       all_ok = false;
     }
   }
@@ -293,7 +447,69 @@ void GluonSystemHardware::innfos_write_position_command(uint8_t id, double posit
   controller_->setPosition(id, radians_to_revolutions(position), ip_address_);
 }
 
-}  // namespace gluon_hardware_interface
+bool GluonSystemHardware::innfos_home_all()
+{
+  static constexpr double kHomeToleranceRad = 0.02;      // ~1.1 deg, per-joint "close enough"
+  static constexpr auto kHomeTimeout = std::chrono::seconds(15);
+  static constexpr auto kPumpInterval = std::chrono::milliseconds(20);
+
+  RCLCPP_INFO(rclcpp::get_logger(kLogger), "Homing all actuators to zero position...");
+
+  // Already in Mode_Profile_Pos (set during innfos_lookup_and_enable), so this
+  // ramps smoothly using each actuator's profile accel/decel/max-velocity
+  // settings rather than snapping instantly to 0.
+  for (auto id : actuator_ids_)
+  {
+    innfos_write_position_command(id, 0.0);
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + kHomeTimeout;
+  bool all_homed = false;
+
+  while (std::chrono::steady_clock::now() < deadline)
+  {
+    ActuatorController::processEvents();
+
+    all_homed = true;
+    for (auto id : actuator_ids_)
+    {
+      double position = 0.0, velocity = 0.0, effort = 0.0;
+      if (!innfos_read_state(id, position, velocity, effort))
+      {
+        RCLCPP_ERROR(
+          rclcpp::get_logger(kLogger),
+          "Actuator %u went offline while homing.", id);
+        return false;
+      }
+      if (std::abs(position) > kHomeToleranceRad)
+      {
+        all_homed = false;
+      }
+    }
+
+    if (all_homed)
+    {
+      break;
+    }
+    std::this_thread::sleep_for(kPumpInterval);
+  }
+
+  if (!all_homed)
+  {
+    RCLCPP_FATAL(
+      rclcpp::get_logger(kLogger),
+      "Homing did not complete within %ld seconds.",
+      static_cast<long>(kHomeTimeout.count()));
+    return false;
+  }
+
+  RCLCPP_INFO(rclcpp::get_logger(kLogger), "All actuators homed.");
+  return true;
+}
+
+}
+
+// namespace gluon_hardware_interface
 
 PLUGINLIB_EXPORT_CLASS(
   gluon_hardware_interface::GluonSystemHardware, hardware_interface::SystemInterface)

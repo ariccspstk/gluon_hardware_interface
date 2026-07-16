@@ -117,6 +117,9 @@ private:
   /// Sends a target position (radians, converted to revolutions) to one
   /// actuator. Called from write().
   void innfos_write_position_command(uint8_t id, double position);
+
+  // All six joints home simultaneously.
+  bool innfos_home_all();
 };
 
 }  // namespace gluon_hardware_interface

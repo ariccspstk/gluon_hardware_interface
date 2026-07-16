@@ -34,12 +34,12 @@ def generate_launch_description():
     declared_args = [
         DeclareLaunchArgument(
             "ip_address",
-            default_value="0.0.0.0",
+            default_value="192.168.1.30",
             description="Ip address for the gluon arm",
         ),
         DeclareLaunchArgument(
             "use_rviz",
-            default_value="false",
+            default_value="true",
             description="Launch RViz2 for visualization.",
         ),
     ]

@@ -11,7 +11,7 @@
     <ros2_control name="GluonSystemHardware" type="system">
         <hardware>
             <plugin>gluon_hardware_interface/GluonSystemHardware</plugin>
-            <param name="ip_address">0.0.0.0</param>
+            <param name="ip_address">192.168.1.30</param>
 
         </hardware>
 
@@ -21,85 +21,55 @@
                  as shown in INNFOS Actuator Studio / IAS. Sequential 1-6
                  assumed here - verify against your actual arm. -->
             <param name="actuator_id">1</param>
-            <command_interface name="position">
-                <param name="min">-2.79</param>
-                <param name="max">2.79</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
         <!-- Joint 2 -->
         <joint name="axis_joint_2">
             <param name="actuator_id">2</param>
-            <command_interface name="position">
-                <param name="min">-1.54</param>
-                <param name="max">1.54</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
         <!-- Joint 3 -->
         <joint name="axis_joint_3">
             <param name="actuator_id">3</param>
-            <command_interface name="position">
-                <param name="min">-2.79</param>
-                <param name="max">2.79</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
         <!-- Joint 4 -->
         <joint name="axis_joint_4">
             <param name="actuator_id">4</param>
-            <command_interface name="position">
-                <param name="min">-2.79</param>
-                <param name="max">2.79</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
         <!-- Joint 5 -->
         <joint name="axis_joint_5">
             <param name="actuator_id">5</param>
-            <command_interface name="position">
-                <param name="min">-2.79</param>
-                <param name="max">2.79</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
         <!-- Joint 6 -->
         <joint name="axis_joint_6">
             <param name="actuator_id">6</param>
-            <command_interface name="position">
-                <param name="min">-2.79</param>
-                <param name="max">2.79</param>
-            </command_interface>
-            <state_interface name="position">
-                <param name="initial_value">0.0</param>
-            </state_interface>
-            <state_interface name="velocity" />
-            <state_interface name="effort" />
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
         </joint>
 
     </ros2_control>
