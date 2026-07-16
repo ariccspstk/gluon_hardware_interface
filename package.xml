@@ -4,7 +4,7 @@
   <name>gluon_hardware_interface</name>
   <version>0.0.0</version>
   <description>ros2_control hardware interface for the INNFOS Gluon arm, built on innfos-cpp-sdk</description>
-  <maintainer email="rowbotworks@gmail.com">rowbot</maintainer>
+  <maintainer email="rowbotworks@gmail.com">Yong Quan</maintainer>
   <license>Apache-2.0</license>
 
   
