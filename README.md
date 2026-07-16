@@ -8,6 +8,9 @@ ROS 2 hardware interface for the Gluon robotic arm.
 - Hardware set up
 - Calibration done for the arm
 
+⚠️ Warning: Ensure the robot's workspace is clear and safe before operation.
+Before launching any bringup or motion planning node, confirm that the arm has free range of motion, no obstacles or people are within reach of the robot, and an emergency stop is accessible.
+
 ## Setup
 
 ### 1. Clone the repositories
@@ -19,7 +22,7 @@ cd ~/ros2_ws/src
 git clone https://github.com/YongQuanz/gluon_description.git
 
 # Hardware interface
-git clone https://github.com/ariccspstk/gluon_hardware_interface.git
+git clone --recurse-submodules https://github.com/ariccspstk/gluon_hardware_interface.git
 
 # Gluon moveit config files
 git clone https://github.com/ariccspstk/gluon_moveit_config.git
