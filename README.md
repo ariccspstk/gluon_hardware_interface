@@ -1,6 +1,6 @@
 # Gluon Hardware Interface
 
-ROS 2 hardware interface for the Gluon robotic arm.
+Ros2 control hardware interface for the Gluon robotic arm.
 
 ## Prerequisites
 
@@ -24,10 +24,6 @@ git clone https://github.com/YongQuanz/gluon_description.git
 # Hardware interface
 git clone --recurse-submodules https://github.com/ariccspstk/gluon_hardware_interface.git
 
-# Gluon moveit config files
-git clone https://github.com/ariccspstk/gluon_moveit_config.git
-```
-
 ### 2. Install dependencies
 
 From the workspace root:
@@ -46,14 +42,23 @@ source install/setup.bash
 
 ## Usage
 
-### Bringup only
+### Bringup 
 
 ```bash
 ros2 launch gluon_hardware_interface gluon_bringup.launch.py
 ```
 
-### Bringup with MoveIt (motion planning)
+### Control joints with rqt_joint_trajectory_controller
+
+With the gluon_bringup running, open a new terminal:
 
 ```bash
-ros2 launch gluon_hardware_interface gluon_moveit_bringup.launch.py
+source ~/ros2_ws/install/setup.bash
+ros2 run rqt_joint_trajectory_controller rqt_joint_trajectory_controller
 ```
+
+In the rqt window:
+
+1. Select the appropriate **Controller Manager ns** (namespace) for your robot.
+2. Select the **Controller** (e.g. `joint_trajectory_controller`) from the dropdown.
+3. Enable the controller/joints and use the sliders to move each joint.
