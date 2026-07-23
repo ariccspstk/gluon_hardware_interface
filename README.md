@@ -19,7 +19,7 @@ Before launching any bringup or motion planning node, confirm that the arm has f
 cd ~/ros2_ws/src
 
 # Robot description
-git clone https://github.com/YongQuanz/gluon_description.git
+git clone https://github.com/ariccspstk/gluon_description.git
 
 # Hardware interface
 git clone --recurse-submodules https://github.com/ariccspstk/gluon_hardware_interface.git
