@@ -43,7 +43,7 @@ source install/setup.bash
 
 ## Usage
 
-### Bringup 
+### Bringup (Requires real hardware)
 
 ```bash
 ros2 launch gluon_hardware_interface gluon_bringup.launch.py
