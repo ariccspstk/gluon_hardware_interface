@@ -25,7 +25,7 @@ git clone https://github.com/YongQuanz/gluon_description.git
 git clone --recurse-submodules https://github.com/ariccspstk/gluon_hardware_interface.git
 
 ### 2. Install dependencies
-
+```
 From the workspace root:
 
 ```bash
